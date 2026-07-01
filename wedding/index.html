@@ -1298,6 +1298,7 @@ const GUESTS = [
   {name:'白蟻', english:'Parky', table:'Table C 右側', seat:'C10-10', meal:'美國特選牛菲力'},
   {name:'Ｗing', english:'Wing', table:'Table C 右側', seat:'C9-9', meal:'伊比利戰斧豬'},
   {name:'Hiro', english:'', table:'Table C 右側', seat:'C6-6', meal:'伊比利戰斧豬'},
+  {name:'Janni', english:'', table:'Table C 左側', seat:'C12', meal:'台灣石斑魚'},
 ];
 
 function buildSeatMap(table) {
@@ -1319,6 +1320,57 @@ function buildSeatMap(table) {
       <div class="smap-entrance">🚪 門口</div>
     </div>`;
 }
+
+/* ── 座位資料即時連動 Google 試算表（CSV）──
+   之後只要編輯試算表，網站就自動同步，不必改動網站檔案。
+   讀取失敗時自動沿用下方內嵌名單當備援。 */
+const SEATING_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQC7WvzagB86KRRr8Ypsahtuv2JsC__8POopvmR3RtczPw0SJveboKBWo9sEC0OF23qfG-UNvcIvgEN/pub?output=csv';
+
+function normSeatTable(t) {
+  t = (t || '').trim();
+  if (t.indexOf('主桌') >= 0) return '主桌';
+  const m = t.match(/[ABC]/);
+  if (!m) return '';
+  const side = t.indexOf('左') >= 0 ? '左' : t.indexOf('右') >= 0 ? '右' : '';
+  return side ? `Table ${m[0]} ${side}側` : `Table ${m[0]}`;
+}
+
+function parseCSV(text) {
+  const rows = []; let row = [], cur = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i+1] === '"') { cur += '"'; i++; } else q = false; }
+      else cur += c;
+    } else {
+      if (c === '"') q = true;
+      else if (c === ',') { row.push(cur); cur = ''; }
+      else if (c === '\n') { row.push(cur); rows.push(row); row = []; cur = ''; }
+      else if (c !== '\r') cur += c;
+    }
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  return rows;
+}
+
+async function loadSeatingFromSheet() {
+  try {
+    const res = await fetch(SEATING_CSV_URL, { cache: 'no-store' });
+    const rows = parseCSV(await res.text());
+    const list = [];
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      const name = (r[0] || '').trim();
+      if (!name) continue;
+      list.push({
+        name, english: (r[1] || '').trim(), table: normSeatTable(r[2]),
+        seat: (r[3] || '').trim(), meal: (r[4] || '').trim(),
+      });
+    }
+    if (list.length) { GUESTS.length = 0; list.forEach(g => GUESTS.push(g)); }
+  } catch (e) { /* 沿用內嵌名單 */ }
+}
+loadSeatingFromSheet();
 
 function searchSeat() {
   const input = document.getElementById('seating-input').value.trim();
